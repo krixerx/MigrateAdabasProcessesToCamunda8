@@ -30,7 +30,7 @@ independently written expectations file.
 
 ## Quick start
 
-Needs Docker Desktop, Java 21 and Maven. Host ports 18080, 36500, 19600 and 15432 must be free;
+Needs Docker Desktop, Java 25 and Maven. Host ports 18080, 36500, 19600 and 15432 must be free;
 they are deliberately non-default so another Camunda stack can run alongside on the usual ones.
 
 ```sh

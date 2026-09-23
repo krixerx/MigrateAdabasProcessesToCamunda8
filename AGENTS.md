@@ -4,7 +4,7 @@
 
 This proof of concept infers in-flight process state from synthetic Adabas exports and migrates cases to Camunda 8.
 
-- `migration-app/`: Java 21 Spring Boot CLI, built with Maven. Production packages under `src/main/java/com/poc/migration/` cover extraction, classification, loading, reconciliation, and the ledger.
+- `migration-app/`: Java 25 Spring Boot CLI, built with Maven. Production packages under `src/main/java/com/poc/migration/` cover extraction, classification, loading, reconciliation, and the ledger.
 - `migration-app/src/main/resources/`: application configuration and SQL schema. Tests mirror production packages under `src/test/java/`.
 - `processes/`: BPMN workflow and DMN classification table.
 - `fixtures/`: synthetic CSV exports, freeze manifest, and independently written expected outcomes.
@@ -13,7 +13,7 @@ This proof of concept infers in-flight process state from synthetic Adabas expor
 
 ## Build, Test, and Development Commands
 
-Run from the repository root with Java 21, Maven, and Docker available:
+Run from the repository root with Java 25, Maven, and Docker available:
 
 - `mvn -f migration-app/pom.xml package`: compile, run tests, and build the executable JAR.
 - `mvn -f migration-app/pom.xml test`: run the full test suite; engine tests start disposable containers.

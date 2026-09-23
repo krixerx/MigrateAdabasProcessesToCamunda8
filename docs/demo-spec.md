@@ -20,7 +20,7 @@ invented and the expected outcomes are hand-written (`fixtures/README.md`).
 ## Prerequisites
 
 - Docker Desktop
-- Java 21, Maven
+- Java 25, Maven
 - Ports 18080 / 36500 / 19600 / 15432 free. They are deliberately non-default so the
   sibling stack can run at the same time on 8080 / 26500 / 9600 / 5432.
 
