@@ -61,6 +61,58 @@ filtered search into a historical one that returns terminal rows too.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    CSV["Frozen CSV export<br/>adabas-export.csv<br/>manifest.csv<br/>expected-outcomes.csv"]
+
+    subgraph APP["migration-app · one CLI, four phases"]
+        direction TB
+        EX["extract<br/>normalise, hash, pre-validate"]
+        CL["classify"]
+        LO["load"]
+        RE["reconcile · the gate"]
+        EX --> CL --> LO --> RE
+    end
+
+    subgraph C8["Camunda 8.9.12"]
+        direction TB
+        DMN["classification DMN"]
+        ZB["engine<br/>instances held at the start event"]
+        UT["vision-assessment<br/>cashier-fee-review<br/>issuing-review"]
+        ZB -.->|"token released"| UT
+    end
+
+    subgraph PG["PostgreSQL 17 · one server, two schemas"]
+        direction TB
+        SEC[("schema camunda<br/>secondary storage<br/>what the engine did")]
+        LED[("schema migration<br/>the ledger<br/>what the tool intended")]
+    end
+
+    CSV --> EX
+    CL <-->|"evaluate · matchedRules[]"| DMN
+    LO -->|"1 · intent, before the call"| LED
+    LO -->|"2 · create, held"| ZB
+    RE ==>|"GATE: PASS · modification"| ZB
+    ZB -->|"export"| SEC
+    RE -->|"read · counts"| LED
+    RE -->|"read · liveness"| SEC
+```
+
+**Where Postgres sits.** One server carries both sides of the migration, in two schemas with
+separate owners and no cross grants: the app cannot write the engine's projection and the engine
+cannot see the ledger. That separation is what makes the gate meaningful. The `migration` schema
+records what this tool *intended* for every case, written before the engine is called. The
+`camunda` schema is the engine's own exported projection of what actually happened, and it is
+what the v2 search API answers from. The gate reads both and refuses to release unless they
+agree, which is the only way to notice an instance somebody cancelled by hand in Operate.
+
+It is also why the gate waits instead of sampling. The exporter flushes every 0.5s, so a held
+instance that has not reached the `camunda` schema yet looks exactly like one that was
+cancelled. A single query cannot tell those apart; the gate polls each held instance up to
+`migration.visibility-timeout` before calling it missing.
+
+### Per-record decision path
+
 ```
 CSV export
     |
