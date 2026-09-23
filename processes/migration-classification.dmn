@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             id="migration-classification-definitions"
+             name="Migration Classification"
+             namespace="http://camunda.org/schema/1.0/dmn"
+             exporter="hand-written"
+             exporterVersion="1.0">
+
+  <!--
+    Where an in-flight Adabas record belongs in the Camunda process.
+
+    HIT POLICY IS COLLECT, AND THERE IS DELIBERATELY NO CATCH-ALL ROW.
+
+    A catch-all is forbidden: under UNIQUE it overlaps every rule by
+    construction and the table throws on every record; under FIRST it works but
+    hides genuine rule conflicts behind row order.
+
+    The caller reads evaluatedDecisions[].matchedRules[] and branches on the
+    number of DISTINCT output tuples, comparing on {outcome, targetElementId,
+    reasonCode} only - ruleId is provenance and must be EXCLUDED from the
+    comparison, or two redundant rules would look ambiguous:
+
+        1 distinct   -> proceed
+        0 hits       -> QUARANTINE_UNMATCHED
+        2+ identical -> proceed, count a REDUNDANT_RULE warning
+        2+ distinct  -> QUARANTINE_AMBIGUOUS
+
+    NEVER read the top-level output: a non-matching COLLECT evaluation returns
+    the STRING "null", not an empty result.
+
+    >> NOTE ON THE SIBLING PROJECT <<
+    The sibling POC's eligibility table also uses COLLECT with no catch-all,
+    but its semantics are INVERTED: there an empty result means eligible (the
+    happy path) and multiple hits are normal and desired. Here empty means
+    failure. Only the XML attribute carries over. Do not "align" these tables.
+
+    COVERAGE over the 96-cell input domain (2^5 x 3), verified by enumeration:
+      R1 48 | R2 12 | R3 12 | R4 12 | R5 2 | R6 2 | R7 2 | R8 2  = 92 covered
+      4 uncovered, 0 multi-hit. All four gaps have feePaid = true:
+        (feePaid=true, visionOutcome=NONE)  x2  - fee before any vision test
+        (feePaid=true, visionOutcome=FAIL)  x2  - fee despite a failed test
+      Both are business impossibilities and MUST quarantine as unmatched.
+      Criterion 9a asserts exactly 92 / 4 / 0.
+
+    Pre-validation runs BEFORE this table and removes contradictions
+    (expired without issued, completed without issued), so R4-R8 can leave
+    hasExpired unconstrained.
+
+    R3 and R8 are PROVISIONAL:
+      R3 - are expired permits historical (SKIP) or renewals (MIGRATE)? OQ9.
+           Likely the most common shape in a 30-year file.
+      R8 - depends on the vision-test collapsing rule (OQ2). Under "latest
+           occurrence", a case merely awaiting a retry after one FAIL is
+           silently skipped. R8 therefore constrains feePaid = false;
+           (feePaid=true, FAIL) is left uncovered so it quarantines.
+  -->
+
+  <decision id="migration-classification" name="migrationClassification">
+    <decisionTable id="migration-classification-table" hitPolicy="COLLECT">
+
+      <input id="in-has-date-completed" label="Completed">
+        <inputExpression id="in-expr-has-date-completed" typeRef="boolean">
+          <text>hasDateCompleted</text>
+        </inputExpression>
+      </input>
+      <input id="in-has-issued" label="Issued">
+        <inputExpression id="in-expr-has-issued" typeRef="boolean">
+          <text>hasIssued</text>
+        </inputExpression>
+      </input>
+      <input id="in-has-expired" label="Expired">
+        <inputExpression id="in-expr-has-expired" typeRef="boolean">
+          <text>hasExpired</text>
+        </inputExpression>
+      </input>
+      <input id="in-within-cutoff" label="Within cutoff">
+        <inputExpression id="in-expr-within-cutoff" typeRef="boolean">
+          <text>withinCutoff</text>
+        </inputExpression>
+      </input>
+      <input id="in-fee-paid" label="Fee paid">
+        <inputExpression id="in-expr-fee-paid" typeRef="boolean">
+          <text>feePaid</text>
+        </inputExpression>
+      </input>
+      <input id="in-vision-outcome" label="Vision outcome">
+        <inputExpression id="in-expr-vision-outcome" typeRef="string">
+          <text>visionOutcome</text>
+        </inputExpression>
+      </input>
+
+      <output id="out-outcome" label="Outcome" name="outcome" typeRef="string" />
+      <output id="out-target" label="Target element" name="targetElementId" typeRef="string" />
+      <output id="out-reason" label="Reason" name="reasonCode" typeRef="string" />
+      <output id="out-rule-id" label="Rule" name="ruleId" typeRef="string" />
+
+      <rule id="R1">
+        <description>Completed: nothing to migrate.</description>
+        <inputEntry id="R1-i1"><text>true</text></inputEntry>
+        <inputEntry id="R1-i2"><text>-</text></inputEntry>
+        <inputEntry id="R1-i3"><text>-</text></inputEntry>
+        <inputEntry id="R1-i4"><text>-</text></inputEntry>
+        <inputEntry id="R1-i5"><text>-</text></inputEntry>
+        <inputEntry id="R1-i6"><text>-</text></inputEntry>
+        <outputEntry id="R1-o1"><text>"SKIP"</text></outputEntry>
+        <outputEntry id="R1-o2"><text>null</text></outputEntry>
+        <outputEntry id="R1-o3"><text>"COMPLETED"</text></outputEntry>
+        <outputEntry id="R1-o4"><text>"R1"</text></outputEntry>
+      </rule>
+
+      <rule id="R2">
+        <description>Issued and not expired: a live permit, not an in-flight application.</description>
+        <inputEntry id="R2-i1"><text>false</text></inputEntry>
+        <inputEntry id="R2-i2"><text>true</text></inputEntry>
+        <inputEntry id="R2-i3"><text>false</text></inputEntry>
+        <inputEntry id="R2-i4"><text>-</text></inputEntry>
+        <inputEntry id="R2-i5"><text>-</text></inputEntry>
+        <inputEntry id="R2-i6"><text>-</text></inputEntry>
+        <outputEntry id="R2-o1"><text>"SKIP"</text></outputEntry>
+        <outputEntry id="R2-o2"><text>null</text></outputEntry>
+        <outputEntry id="R2-o3"><text>"LIVE_PERMIT"</text></outputEntry>
+        <outputEntry id="R2-o4"><text>"R2"</text></outputEntry>
+      </rule>
+
+      <rule id="R3">
+        <description>PROVISIONAL (OQ9): issued and expired. Historical, or a renewal?</description>
+        <inputEntry id="R3-i1"><text>false</text></inputEntry>
+        <inputEntry id="R3-i2"><text>true</text></inputEntry>
+        <inputEntry id="R3-i3"><text>true</text></inputEntry>
+        <inputEntry id="R3-i4"><text>-</text></inputEntry>
+        <inputEntry id="R3-i5"><text>-</text></inputEntry>
+        <inputEntry id="R3-i6"><text>-</text></inputEntry>
+        <outputEntry id="R3-o1"><text>"SKIP"</text></outputEntry>
+        <outputEntry id="R3-o2"><text>null</text></outputEntry>
+        <outputEntry id="R3-o3"><text>"EXPIRED_HISTORICAL"</text></outputEntry>
+        <outputEntry id="R3-o4"><text>"R3"</text></outputEntry>
+      </rule>
+
+      <rule id="R4">
+        <description>Outside the agreed cutoff but still live. QUARANTINE, never SKIP: after Adabas is switched off a silently skipped live case exists in no system at all.</description>
+        <inputEntry id="R4-i1"><text>false</text></inputEntry>
+        <inputEntry id="R4-i2"><text>false</text></inputEntry>
+        <inputEntry id="R4-i3"><text>-</text></inputEntry>
+        <inputEntry id="R4-i4"><text>false</text></inputEntry>
+        <inputEntry id="R4-i5"><text>-</text></inputEntry>
+        <inputEntry id="R4-i6"><text>-</text></inputEntry>
+        <outputEntry id="R4-o1"><text>"QUARANTINE"</text></outputEntry>
+        <outputEntry id="R4-o2"><text>null</text></outputEntry>
+        <outputEntry id="R4-o3"><text>"OUT_OF_CUTOFF"</text></outputEntry>
+        <outputEntry id="R4-o4"><text>"R4"</text></outputEntry>
+      </rule>
+
+      <rule id="R5">
+        <description>No vision test taken yet: awaiting the assessor.</description>
+        <inputEntry id="R5-i1"><text>false</text></inputEntry>
+        <inputEntry id="R5-i2"><text>false</text></inputEntry>
+        <inputEntry id="R5-i3"><text>-</text></inputEntry>
+        <inputEntry id="R5-i4"><text>true</text></inputEntry>
+        <inputEntry id="R5-i5"><text>false</text></inputEntry>
+        <inputEntry id="R5-i6"><text>"NONE"</text></inputEntry>
+        <outputEntry id="R5-o1"><text>"MIGRATE"</text></outputEntry>
+        <outputEntry id="R5-o2"><text>"vision-assessment"</text></outputEntry>
+        <outputEntry id="R5-o3"><text>null</text></outputEntry>
+        <outputEntry id="R5-o4"><text>"R5"</text></outputEntry>
+      </rule>
+
+      <rule id="R6">
+        <description>Vision passed, fee not yet taken: awaiting the cashier.</description>
+        <inputEntry id="R6-i1"><text>false</text></inputEntry>
+        <inputEntry id="R6-i2"><text>false</text></inputEntry>
+        <inputEntry id="R6-i3"><text>-</text></inputEntry>
+        <inputEntry id="R6-i4"><text>true</text></inputEntry>
+        <inputEntry id="R6-i5"><text>false</text></inputEntry>
+        <inputEntry id="R6-i6"><text>"PASS"</text></inputEntry>
+        <outputEntry id="R6-o1"><text>"MIGRATE"</text></outputEntry>
+        <outputEntry id="R6-o2"><text>"cashier-fee-review"</text></outputEntry>
+        <outputEntry id="R6-o3"><text>null</text></outputEntry>
+        <outputEntry id="R6-o4"><text>"R6"</text></outputEntry>
+      </rule>
+
+      <rule id="R7">
+        <description>Vision passed and fee paid: awaiting issue.</description>
+        <inputEntry id="R7-i1"><text>false</text></inputEntry>
+        <inputEntry id="R7-i2"><text>false</text></inputEntry>
+        <inputEntry id="R7-i3"><text>-</text></inputEntry>
+        <inputEntry id="R7-i4"><text>true</text></inputEntry>
+        <inputEntry id="R7-i5"><text>true</text></inputEntry>
+        <inputEntry id="R7-i6"><text>"PASS"</text></inputEntry>
+        <outputEntry id="R7-o1"><text>"MIGRATE"</text></outputEntry>
+        <outputEntry id="R7-o2"><text>"issuing-review"</text></outputEntry>
+        <outputEntry id="R7-o3"><text>null</text></outputEntry>
+        <outputEntry id="R7-o4"><text>"R7"</text></outputEntry>
+      </rule>
+
+      <rule id="R8">
+        <description>PROVISIONAL (OQ2): vision failed and no fee taken. Under "latest occurrence" a case awaiting a retry is skipped here. Constrained to feePaid=false so (paid, FAIL) stays uncovered and quarantines.</description>
+        <inputEntry id="R8-i1"><text>false</text></inputEntry>
+        <inputEntry id="R8-i2"><text>false</text></inputEntry>
+        <inputEntry id="R8-i3"><text>-</text></inputEntry>
+        <inputEntry id="R8-i4"><text>true</text></inputEntry>
+        <inputEntry id="R8-i5"><text>false</text></inputEntry>
+        <inputEntry id="R8-i6"><text>"FAIL"</text></inputEntry>
+        <outputEntry id="R8-o1"><text>"SKIP"</text></outputEntry>
+        <outputEntry id="R8-o2"><text>null</text></outputEntry>
+        <outputEntry id="R8-o3"><text>"TERMINATED_VISION_FAIL"</text></outputEntry>
+        <outputEntry id="R8-o4"><text>"R8"</text></outputEntry>
+      </rule>
+
+    </decisionTable>
+  </decision>
+
+  <dmndi:DMNDI>
+    <dmndi:DMNDiagram id="dmn-diagram">
+      <dmndi:DMNShape id="dmn-shape-migration-classification" dmnElementRef="migration-classification">
+        <dc:Bounds height="80" width="180" x="160" y="100" />
+      </dmndi:DMNShape>
+    </dmndi:DMNDiagram>
+  </dmndi:DMNDI>
+
+</definitions>

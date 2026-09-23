@@ -1,0 +1,38 @@
+# Migration app. A CLI, not a server.
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  application:
+    name: migration-app
+  # Ledger. Not touched by extract/classify, which create nothing, but the load and
+  # reconcile entry points share this application.
+  datasource:
+    url: jdbc:postgresql://localhost:15432/migration?currentSchema=migration
+    username: migration
+    password: migration
+  sql:
+    init:
+      # Idempotent DDL, applied on every start. A POC has no migration history to
+      # honour yet, and CREATE TABLE IF NOT EXISTS is safe to re-run.
+      mode: always
+
+logging:
+  level:
+    root: WARN
+    com.poc.migration: INFO
+    # The client logs a connection banner at INFO that buries the report.
+    io.camunda: WARN
+
+camunda:
+  client:
+    mode: self-managed
+    # Non-default ports: the sibling POC holds 8080/26500 on this machine and the
+    # projects are required to know nothing about each other.
+    rest-address: http://localhost:18080
+    grpc-address: http://localhost:36500
+    auth:
+      # POC only, matching unprotectedApi: true on the cluster. This is also why
+      # task placement can be asserted through the v2 API with no Keycloak, which
+      # is what let the human layer stay deferred.
+      method: none

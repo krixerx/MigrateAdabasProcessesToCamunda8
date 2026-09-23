@@ -1,0 +1,20 @@
+# Maven build output. Also keeps stale copies of resources out of the repo.
+target/
+
+# Eclipse
+.project
+.settings/
+.classpath
+
+# IntelliJ / VS Code
+.idea/
+*.iml
+.vscode/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/.headroom_wrap_*
+
+# OS
+Thumbs.db
+.DS_Store

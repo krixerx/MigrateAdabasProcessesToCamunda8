@@ -1,0 +1,25 @@
+# HAND-WRITTEN FROM THE BUSINESS RULES. Do not generate this from the DMN.
+# Generating it would only prove the decision table agrees with itself.
+#
+# Keyed by SOURCE_LINE, not CASE_REF: line 13 has no CASE_REF and cannot be
+# keyed by a value it does not have. CASE_REF below is informational only.
+#
+# Freeze parameters: freezeDate=2026-09-15, cutoffMonths=6 -> boundary 2026-03-15
+# Collapsing rule: latest vision-test occurrence by date (PROVISIONAL, OQ2)
+#
+# Totals: 3 MIGRATE, 4 SKIP, 6 QUARANTINE
+# Quarantine reason counts: PREVALIDATION=3, UNMATCHED=1, OUT_OF_CUTOFF=1, CONTRACT_UNSATISFIED=1
+SOURCE_LINE,CASE_REF,EXPECTED_OUTCOME,EXPECTED_TARGET_ELEMENT,EXPECTED_REASON_CODE,WHY
+2,LP-2026-000001,MIGRATE,vision-assessment,,No vision test yet and fee unpaid: awaiting the assessor
+3,LP-2026-000002,MIGRATE,cashier-fee-review,,Latest of two vision occurrences is PASS; fee still unpaid
+4,LP-2026-000003,MIGRATE,issuing-review,,Vision passed and fee paid: awaiting issue
+5,LP-2026-000004,SKIP,,COMPLETED,DATE_COMPLETED is set
+6,LP-2026-000005,SKIP,,LIVE_PERMIT,Issued and not expired
+7,LP-2021-000006,SKIP,,EXPIRED_HISTORICAL,Issued and expired in the past (PROVISIONAL - renewal or historical? OQ9)
+8,LP-2026-000007,SKIP,,TERMINATED_VISION_FAIL,Latest vision occurrence is FAIL and fee unpaid
+9,LP-2025-000008,QUARANTINE,,OUT_OF_CUTOFF,Still live but last updated before the cutoff: a human must decide, never a silent skip
+10,LP-2026-000009,QUARANTINE,,UNMATCHED,Fee paid with no vision test is a business impossibility: deliberate 0-hit cell
+11,LP-2026-000010,QUARANTINE,,PREVALIDATION,EXPIRED set with ISSUED empty: contradiction, never reaches the decision table
+12,LP-2026-000011,QUARANTINE,,PREVALIDATION,LAST_UPDATED missing: must not default to out-of-cutoff
+13,,QUARANTINE,,PREVALIDATION,CASE_REF missing: no durable business key
+14,LP-2026-000013,QUARANTINE,,CONTRACT_UNSATISFIED,Classifies to issuing-review but PERMIT_CATEGORY is empty

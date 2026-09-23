@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  id="learner-permit-migration-definitions"
+                  targetNamespace="http://camunda.org/schema/migration">
+
+  <!--
+    PROCESS ID IS learner-permit-migration, NOT learner-permit.
+
+    The sibling POC owns the id "learner-permit". Camunda identifies a
+    process by id, not filename: deploying a second definition claiming that id
+    creates a new VERSION of it, and since this model carries a migrator
+    execution listener, every new citizen application would then halt at the
+    start event. Silent, and the docs describe it as causing no error - which
+    is exactly what makes it dangerous. It would also break the sibling POC's
+    own process test.
+
+    NO SERVICE TASKS. Accepted simplification (see "Accepted shortcuts" in the
+    design doc). Consequence, recorded honestly: the hold's side-effect
+    suppression property is NOT exercised by this POC, because nothing can fire.
+    Its release-control property still is, via the gate and the abort rehearsal.
+    gstack-shortcut(no-service-tasks): hold's side-effect suppression untested;
+    upgrade when the POC must demonstrate that migration fires no citizen
+    notifications.
+
+    MIGRATION TOPOLOGY
+
+      apply-for-permit ──► vision-assessment ──► cashier-fee-review ──► issuing-review ──► end
+      (None Start Event)   [civil-servant]       [cashier]              [issuing-officer]
+             │
+             └─ zeebe:executionListener eventType="end" type="migrator"
+                Instance halts HERE, before traversing any sequence flow.
+
+      Release is ONE operation: POST /v2/process-instances/{key}/modification
+        activateInstructions  -> targetElementId (+ scoped variables)
+        terminateInstructions -> the start-event token
+      Success = the target element is active. Completing the held migrator job
+      afterwards is NOT a second barrier, and the job may not survive
+      termination of its own token - probe M7 settles this before the loader
+      is written.
+
+      Activation is EXPLICIT, never a polling @JobWorker. A Spring worker on
+      type "migrator" would complete held jobs the instant they appear and the
+      hold would fail open.
+
+    CLEANUP IS ON THE CUTOVER CRITICAL PATH. After release, the listener is
+    removed, the model reverted and redeployed, BEFORE the service reopens.
+    An instance started while the listener is still present halts at the start
+    event. See criterion 12.
+  -->
+
+  <bpmn:process id="learner-permit-migration" name="Apply for a learner permit (migration target)" isExecutable="true">
+
+    <bpmn:startEvent id="apply-for-permit" name="Apply for a learner permit">
+      <bpmn:extensionElements>
+        <zeebe:executionListeners>
+          <!-- TEMPORARY. Removed at cleanup, per Camunda's documented runtime
+               migration procedure: "Remove migrator execution listeners from
+               Camunda 8 models", "Revert temporary model changes", "Redeploy". -->
+          <zeebe:executionListener eventType="end" type="migrator" />
+        </zeebe:executionListeners>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>flow-to-vision-assessment</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:sequenceFlow id="flow-to-vision-assessment" sourceRef="apply-for-permit" targetRef="vision-assessment" />
+
+    <bpmn:userTask id="vision-assessment" name="Assess vision test">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <!-- Static string. It routes and it labels; on the reference
+             implementation it does NOT authorize - enforcement there is
+             realm-role RBAC. See the permissions section of the design doc. -->
+        <zeebe:assignmentDefinition candidateGroups="civil-servant" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow-to-vision-assessment</bpmn:incoming>
+      <bpmn:outgoing>flow-to-cashier-fee-review</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="flow-to-cashier-fee-review" sourceRef="vision-assessment" targetRef="cashier-fee-review" />
+
+    <bpmn:userTask id="cashier-fee-review" name="Confirm fee received">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="cashier" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow-to-cashier-fee-review</bpmn:incoming>
+      <bpmn:outgoing>flow-to-issuing-review</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="flow-to-issuing-review" sourceRef="cashier-fee-review" targetRef="issuing-review" />
+
+    <bpmn:userTask id="issuing-review" name="Review and issue permit">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="issuing-officer" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>flow-to-issuing-review</bpmn:incoming>
+      <bpmn:outgoing>flow-to-end</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:sequenceFlow id="flow-to-end" sourceRef="issuing-review" targetRef="permit-issued" />
+
+    <bpmn:endEvent id="permit-issued" name="Permit issued">
+      <bpmn:incoming>flow-to-end</bpmn:incoming>
+    </bpmn:endEvent>
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="diagram">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="learner-permit-migration">
+      <bpmndi:BPMNShape id="shape-apply-for-permit" bpmnElement="apply-for-permit">
+        <dc:Bounds x="160" y="142" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="138" y="185" width="83" height="27" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape-vision-assessment" bpmnElement="vision-assessment">
+        <dc:Bounds x="250" y="120" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape-cashier-fee-review" bpmnElement="cashier-fee-review">
+        <dc:Bounds x="410" y="120" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape-issuing-review" bpmnElement="issuing-review">
+        <dc:Bounds x="570" y="120" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="shape-permit-issued" bpmnElement="permit-issued">
+        <dc:Bounds x="732" y="142" width="36" height="36" />
+        <bpmndi:BPMNLabel><dc:Bounds x="725" y="185" width="52" height="14" /></bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="edge-flow-to-vision-assessment" bpmnElement="flow-to-vision-assessment">
+        <di:waypoint x="196" y="160" /><di:waypoint x="250" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge-flow-to-cashier-fee-review" bpmnElement="flow-to-cashier-fee-review">
+        <di:waypoint x="350" y="160" /><di:waypoint x="410" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge-flow-to-issuing-review" bpmnElement="flow-to-issuing-review">
+        <di:waypoint x="510" y="160" /><di:waypoint x="570" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="edge-flow-to-end" bpmnElement="flow-to-end">
+        <di:waypoint x="670" y="160" /><di:waypoint x="732" y="160" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+
+</bpmn:definitions>

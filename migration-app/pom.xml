@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.0.7</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>com.poc</groupId>
+  <artifactId>migration-app</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>Adabas to Camunda 8 migration</name>
+
+  <!--
+    ONE application, four entry points: extract, classify, load, reconcile.
+
+    Four separate services would be mechanism, and design premise P1 says the
+    POC's job is correctness, not mechanism. They share one ledger and run as
+    one pipeline, so there is nothing to gain from process isolation here.
+
+    Dependency coordinates are COPIED from the sibling POC. Nothing is
+    shared at runtime: the two projects use different process ids, different
+    ports, different databases and different realms, by decision.
+  -->
+
+  <properties>
+    <java.version>21</java.version>
+    <camunda.version>8.9.12</camunda.version>
+    <!--
+      camunda-client-java needs httpclient5 >= 5.6; Spring Boot 4.0.x manages
+      5.5.x. Without this pin the client fails at runtime, not at compile time,
+      which makes it an expensive one to rediscover. Copied from the sibling
+      POC, where it was already paid for.
+    -->
+    <httpclient5.version>5.6.2</httpclient5.version>
+    <!-- Pinned to what camunda-process-test-spring brings in, so core and the
+         postgresql module cannot drift onto two versions. -->
+    <testcontainers.version>2.0.5</testcontainers.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter</artifactId>
+    </dependency>
+
+    <!-- Camunda client. The design calls every engine operation through the
+         v2 REST API; this is the typed way to do it, and it is what
+         camunda-process-test-spring asserts against. -->
+    <dependency>
+      <groupId>io.camunda</groupId>
+      <artifactId>camunda-spring-boot-starter</artifactId>
+      <version>${camunda.version}</version>
+    </dependency>
+
+    <!-- Ledger. Not used by extract/classify, which create nothing, but the
+         schema and the load module land in the same app. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-jdbc</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.postgresql</groupId>
+      <artifactId>postgresql</artifactId>
+      <scope>runtime</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Boots a real engine and asserts token position. The POC's entire claim
+         is correctness, so the test framework is the deliverable, not scaffolding. -->
+    <dependency>
+      <groupId>io.camunda</groupId>
+      <artifactId>camunda-process-test-spring</artifactId>
+      <version>${camunda.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-postgresql</artifactId>
+      <version>${testcontainers.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>

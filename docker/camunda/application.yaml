@@ -1,0 +1,72 @@
+# Camunda 8.9 orchestration cluster config for the migration POC.
+#
+# Two deliberate choices from the design doc:
+#
+# 1. secondary-storage type rdbms pointing at the SAME Postgres as the migration
+#    ledger, in its own schema. One database engine for the stack, not two.
+#
+# 2. flushInterval is the exporter lag. The release gate's duplicate check
+#    queries this store by variable, so the gate MUST wait for the exporter to
+#    drain before counting -- otherwise it under-counts, finds no duplicate, and
+#    releases. See "Release gate" in the design doc. The value is written here
+#    explicitly rather than left default so the number the gate waits for is
+#    visible in one place.
+
+management.endpoints.configprops.show-values: always
+
+camunda:
+  process-instance-creation:
+    # Probe M8 result, verified on this stack.
+    #
+    # Guarantees at most one ACTIVE ROOT process instance per
+    # (process definition, tenant, businessId). A duplicate create is rejected
+    # with ALREADY_EXISTS / HTTP 409.
+    #
+    # This is the engine-side half of cross-run idempotency (design Issue 5).
+    # businessId is set to CASE_REF, derived deterministically from the source
+    # record, so the same Adabas record always produces the same businessId and
+    # a second live migration of it cannot be created. The docs name
+    # "case reference" as the intended use.
+    #
+    # IT DOES NOT CLOSE ISSUE 5 ON ITS OWN. Uniqueness is checked against
+    # ACTIVE instances only: once an instance completes or is terminated the
+    # businessId becomes reusable, so a case that was migrated, released and
+    # completed could be migrated again by a later run. The ledger must still
+    # remember that a case has already been through.
+    #
+    # Also note: process instance MIGRATION deliberately bypasses this check.
+    business-id-uniqueness-enabled: true
+  backup:
+    webapps:
+      enabled: false
+  system:
+    cpu-thread-count: "3"
+    io-thread-count: "3"
+  security:
+    authentication:
+      method: "basic"
+      # POC only: REST and gRPC open without tokens.
+      # This is what lets criterion 5 assert element + candidateGroup through
+      # /v2/user-tasks/search with no Keycloak at all, which is why the human
+      # layer could stay deferred.
+      unprotectedApi: true
+    authorizations:
+      enabled: false
+    initialization:
+      users:
+        - username: "demo"
+          password: "demo"
+          name: "Demo User"
+          email: "demo@demo.local"
+      defaultRoles.admin.users:
+        - "demo"
+  data:
+    secondary-storage:
+      type: rdbms
+      rdbms:
+        url: jdbc:postgresql://postgres:5432/migration?currentSchema=camunda
+        username: camunda
+        password: camunda
+        # The exporter lag the release gate must outwait.
+        flushInterval: PT0.5S
+        queueSize: 1000

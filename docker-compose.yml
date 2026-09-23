@@ -1,0 +1,82 @@
+# Adabas -> Camunda 8 in-flight migration POC.
+#
+# Two services only. The design doc cut the human layer (no Keycloak), cut
+# service tasks (no worker host needed yet), and deferred the Adabas container
+# to an optional iteration 2 -- so this is the whole stack.
+#
+#   postgres      migration ledger (schema: migration)
+#                 + Camunda secondary storage (schema: camunda)
+#   orchestration Zeebe + Operate + Tasklist + Identity, single image
+#
+# Ports are non-default on purpose: the sibling POC holds 8080/26500/9600/5432 and
+# two projects must run side by side without knowing about each other.
+
+name: adabas-camunda8-migration
+
+services:
+  postgres:
+    image: postgres:${POSTGRES_VERSION:-17-alpine}
+    container_name: migration-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-migration}
+      POSTGRES_USER: ${POSTGRES_USER:-migration}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-migration}
+    ports:
+      - "${PRIVATE_BIND:-}${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Runs once, on an empty data directory only. Creates both schemas and
+      # the two accounts. Wiping the volume re-runs it.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # The engine cannot start until BOTH schemas exist, not merely until the
+      # server accepts connections -- init scripts run after that point.
+      test: ["CMD-SHELL", "psql -U ${POSTGRES_USER:-migration} -d ${POSTGRES_DB:-migration} -tAc \"SELECT 1 FROM information_schema.schemata WHERE schema_name='camunda'\" | grep -q 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks: [migration]
+    restart: unless-stopped
+
+  orchestration:
+    image: camunda/camunda:${CAMUNDA_VERSION:-8.9.12}
+    container_name: migration-camunda
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PRIVATE_BIND:-}${CAMUNDA_GRPC_PORT:-36500}:26500"  # Zeebe gRPC
+      - "${PRIVATE_BIND:-}${CAMUNDA_HTTP_PORT:-18080}:8080"   # REST v2 + Operate + Tasklist
+      - "${PRIVATE_BIND:-}${CAMUNDA_MGMT_PORT:-19600}:9600"   # management / actuator
+    mem_limit: 2g
+    volumes:
+      - camunda-data:/usr/local/camunda/data
+    configs:
+      - source: orchestration-config
+        target: /usr/local/camunda/config/application.yaml
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9600 && echo -e \"GET /actuator/health/status HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n\" >&3 && head -n 1 <&3'"]
+      # Generous start_period, copied from the sibling POC's hard-won comment: 8.9.12
+      # boots an MCP gateway and Spring AI autoconfiguration before Tomcat binds
+      # 9600, and the first answer can arrive ~75s after container start. A check
+      # that fails inside start_period does not count against retries, and one
+      # that succeeds ends it early -- so widening it costs a fast start nothing.
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 180s
+    networks: [migration]
+    restart: unless-stopped
+
+configs:
+  orchestration-config:
+    file: ./docker/camunda/application.yaml
+
+volumes:
+  postgres-data:
+  camunda-data:
+
+networks:
+  migration:
+    name: adabas-camunda8-migration
