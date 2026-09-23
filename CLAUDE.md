@@ -11,7 +11,7 @@ to a Camunda 8 BPMN process. Legacy process state was never recorded explicitly,
 - Design and rationale: `docs/designs/adabas-camunda8-inflight-migration-poc.md` — read this
   before changing behaviour. Most non-obvious choices are argued there.
 - How to run the demo: `docs/demo-spec.md`.
-- Not a git repository. Source files are UTF-8.
+- Git repository, remote `origin` is https://github.com/krixerx/MigrateAdabasProcessesToCamunda8 (public). Source files are UTF-8.
 
 ## Layout
 
