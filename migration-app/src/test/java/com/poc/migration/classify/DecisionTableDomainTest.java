@@ -1,6 +1,7 @@
 package com.poc.migration.classify;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import com.poc.migration.model.ClassificationInput;
 import com.poc.migration.model.ClassificationInput.VisionOutcome;
@@ -16,6 +17,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Criterion 9a: the decision table's coverage over its ENTIRE input domain.
@@ -44,10 +48,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest(properties = {
         "camunda.client.worker.defaults.enabled=false",
         // No ledger in this test: the decision table creates nothing and touches no database.
+        // Spring Boot 4 moved these out of org.springframework.boot.autoconfigure.jdbc.
+        // Boot ignores an exclude naming a class that is not on the classpath, so the old
+        // names were silently no-ops and this test built a real DataSource and demanded a
+        // Postgres it does not use.
         "spring.autoconfigure.exclude="
-                + "org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration,"
-                + "org.springframework.boot.autoconfigure.sql.init.SqlInitializationAutoConfiguration"
+                + "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration,"
+                + "org.springframework.boot.jdbc.autoconfigure.DataSourceInitializationAutoConfiguration"
 })
 @CamundaSpringProcessTest
 class DecisionTableDomainTest {
@@ -133,5 +141,21 @@ class DecisionTableDomainTest {
             }
         }
         return all;
+    }
+
+    /**
+     * The decision table creates nothing and touches no database, but the application's
+     * component scan still builds {@code Ledger} and everything downstream of it, and
+     * {@code Ledger} takes a {@link JdbcTemplate}. The excludes on the class remove the real
+     * DataSource; this supplies the one bean those components need so no Postgres has to be
+     * running. Nothing in this test should ever call it.
+     */
+    @TestConfiguration
+    static class NoDatabase {
+
+        @Bean
+        JdbcTemplate jdbcTemplate() {
+            return mock(JdbcTemplate.class);
+        }
     }
 }
