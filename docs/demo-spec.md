@@ -28,7 +28,7 @@ invented and the expected outcomes are hand-written (`fixtures/README.md`).
 
 ```sh
 docker compose up -d                 # postgres + Camunda 8.9.12, healthy in ~15-25s
-mvn -f migration-app/pom.xml package # 36 tests; 2 of them start their own throwaway engine
+mvn -f migration-app/pom.xml package # 45 tests; 2 of them start their own throwaway engine
 
 curl -s -F "resources=@processes/learner-permit-migration.bpmn" \
         -F "resources=@processes/migration-classification.dmn" \

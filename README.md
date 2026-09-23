@@ -35,7 +35,7 @@ they are deliberately non-default so another Camunda stack can run alongside on 
 
 ```sh
 docker compose up -d                  # Postgres 17 + Camunda 8.9.12, healthy in ~15-25s
-mvn -f migration-app/pom.xml package  # 44 tests, builds the CLI jar
+mvn -f migration-app/pom.xml package  # 45 tests, builds the CLI jar
 
 # deploy the models (not yet scripted)
 curl -s -F "resources=@processes/learner-permit-migration.bpmn" \
@@ -220,9 +220,10 @@ population just reported as wrong.
 mvn -f migration-app/pom.xml package
 ```
 
-44 tests. All but one run with nothing started. `DecisionTableDomainTest` evaluates the DMN
-deployed from `processes/`, so it asserts the behaviour of the real table and needs Docker and
-the compose Postgres up.
+45 tests in 8 classes. The 43 unit tests run with nothing started. The other two are in
+`DecisionTableDomainTest`, which evaluates the DMN deployed from `processes/` against a
+throwaway engine, so it asserts the behaviour of the real table rather than of a model of it,
+and needs Docker.
 
 ## Scope
 

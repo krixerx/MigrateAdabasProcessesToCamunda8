@@ -25,12 +25,13 @@ to a Camunda 8 BPMN process. Legacy process state was never recorded explicitly,
 ## Build and test
 
 ```sh
-mvn -f migration-app/pom.xml package   # 34 unit tests (~0.2s) + 2 engine tests that start their own container (~20s)
+mvn -f migration-app/pom.xml package   # 43 unit tests (~5s) + 2 engine tests that start their own container
 mvn -f migration-app/pom.xml test -Dtest=DecisionTableDomainTest
 ```
 
-Unit tests need nothing running. The engine tests deploy the DMN from `processes/`, so they
-assert the behaviour of the *deployed* table.
+45 tests in 8 classes. The 43 unit tests need nothing running. The 2 engine tests are both in
+`DecisionTableDomainTest`; they deploy the DMN from `processes/`, so they assert the behaviour
+of the *deployed* table.
 
 ## Invariants worth not breaking
 
